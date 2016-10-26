@@ -21,7 +21,7 @@ public class Server {
 
         clientQueue = new ArrayBlockingQueue<>(CLIENT_QUEUE_CAPACITY);
         try {
-            listener = new ServerSocket(8080);
+            listener = new ServerSocket(8081);
             System.out.println("Server is up and running...");
             while (true) {
                 new Handler(listener.accept()).start();
@@ -41,6 +41,7 @@ public class Server {
         ObjectOutputStream toClient = null;
         Authenticator authenticator;
         Message received;
+        boolean loggedIn;
 
         Handler(Socket client) {
             this.client = client;
@@ -52,20 +53,23 @@ public class Server {
                 authenticator = new Authenticator();
                 in = new ObjectInputStream(client.getInputStream());
 
-                while (true) {
+                for (int i = 0; true; i++) {
+                    System.out.println(client.getInetAddress() + ": login attempt " + (i+1));
                     loginUser = (User) in.readObject();
+                    System.out.println("RECEIVED " + loginUser.getId() + " " + loginUser.getPw());
                     int signal = authenticator.authenticate(loginUser);
                     out = new ObjectOutputStream(client.getOutputStream());
-
+                    loggedIn = false;
                     if (signal > 0) {
                         for (User temp : users) {
                             if (temp.getId().equalsIgnoreCase(loginUser.getId()) && signal != 2) {
+                                loggedIn = true;
                                 System.out.println(loginUser.getId() + " is already online!");
-                                out.writeObject(new Message("server", Integer.toString(-2)));
-                                client.close();
-                                return;
+                                out.writeObject(new Message("server", "-2"));
+                                break;
                             }
                         }
+                        if (loggedIn) continue;
                         out.writeObject(new Message("server", Integer.toString(signal)));
                         userType = (signal == 1) ? User.Type.CLIENT : User.Type.AGENT;
                         loginUser.setOut(out);
@@ -148,7 +152,6 @@ public class Server {
                         toClient.writeObject(received);
                     }
                 }
-
 
             } catch (Exception e) {
                 System.out.println("Exception occurred: " + e);

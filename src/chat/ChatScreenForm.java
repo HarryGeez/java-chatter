@@ -110,54 +110,64 @@ public class ChatScreenForm {
         frame.setJMenuBar(menuBar);
     }
 
-    public void run() throws Exception {
-        final int portNum = 8080;
+    private int validateCredentials() throws IOException, ClassNotFoundException {
+        int receivedSignal;
+
+        System.out.println("Sending " + loginUser.getId() + " " + loginUser.getPw());
+        out.writeUnshared(loginUser);
+        in = new ObjectInputStream(socket.getInputStream());
+        message = (Message) in.readObject();
+        receivedSignal = Integer.parseInt(message.getMsg());
+
+        switch (receivedSignal) {
+            case 0:
+                JOptionPane.showMessageDialog(null, "User not found! Please try again.", "Login Error", JOptionPane.ERROR_MESSAGE);
+                break;
+            case -1:
+                JOptionPane.showMessageDialog(null, "Invalid password! Please try again.", "Login Error", JOptionPane.ERROR_MESSAGE);
+                break;
+            case -2:
+                JOptionPane.showMessageDialog(null, "User already logged in! Please log out first.", "Login Error", JOptionPane.ERROR_MESSAGE);
+                break;
+            case 1:
+                initClient();
+                break;
+            case 2:
+                initAgent();
+                break;
+        }
+
+        return receivedSignal;
+    }
+
+    private void initClient() throws IOException, ClassNotFoundException {
+        taConvo.append("Waiting for agent... Please be patient\n");
+        message = (Message) in.readObject();
+        taConvo.append(message.getLdt() + "  " + message.getFr() + ": " + message.getMsg() + "\n");
+        out.writeObject(new Message(loginUser.getId(), message.getFr()));
+        sendButton.setEnabled(true);
+    }
+
+    private void initAgent() {
+        sendButton.setEnabled(true);
+        broadcastButton.setEnabled(true);
+        createMenuBar();
+        Dimension curSize = frame.getSize();
+        curSize.height += 20;
+        frame.setSize(curSize);
+        taConvo.append("Finding customer in queue...\n");
+    }
+
+    private void run() throws Exception {
+        final int portNum = 8081;
         String ipAddress = (String) JOptionPane.showInputDialog(null,
                 "Enter IP address of server",
                 "Server Connection\n", JOptionPane.INFORMATION_MESSAGE, null,
                 null, "127.0.0.1");
         socket = new Socket(ipAddress, portNum);
         out = new ObjectOutputStream(socket.getOutputStream());
-        int receivedSignal;
         loginUser = new User();
-        while (true) {
-            new LoginForm();
-            out.writeObject(loginUser);
-            in = new ObjectInputStream(socket.getInputStream());
-            message = (Message) in.readObject();
-            receivedSignal = Integer.parseInt(message.getMsg());
-            if (receivedSignal > 0) {
-                break;
-            } else {
-                switch (receivedSignal) {
-                    case 0:
-                        JOptionPane.showMessageDialog(null, "User not found! Please try again.", "Login Error", JOptionPane.ERROR_MESSAGE);
-                        break;
-                    case -1:
-                        JOptionPane.showMessageDialog(null, "Invalid password! Please try again.", "Login Error", JOptionPane.ERROR_MESSAGE);
-                        break;
-                    case -2:
-                        JOptionPane.showMessageDialog(null, "User already logged in! Please log out first.", "Login Error", JOptionPane.ERROR_MESSAGE);
-                        break;
-                }
-            }
-        }
-
-        if (receivedSignal == 1) {
-            sendButton.setEnabled(false);
-            broadcastButton.setEnabled(false);
-            taConvo.append("Waiting for agent... Please be patient\n");
-            message = (Message) in.readObject();
-            taConvo.append(message.getLdt() + "  " + message.getFr() + ": " + message.getMsg() + "\n");
-            out.writeObject(new Message(loginUser.getId(), message.getFr()));
-            sendButton.setEnabled(true);
-        } else {
-            createMenuBar();
-            Dimension curSize = frame.getSize();
-            curSize.height += 20;
-            frame.setSize(curSize);
-            taConvo.append("Finding customer in queue...\n");
-        }
+        new LoginForm();
 
         while (true) {
             message = (Message) in.readObject();
@@ -191,9 +201,15 @@ public class ChatScreenForm {
             loginButton.addActionListener(new ActionListener() {
                 @Override
                 public void actionPerformed(ActionEvent e) {
-                    loginUser.setId(usernameTextField.getText());
-                    loginUser.setPw(new String(passwordPasswordField.getPassword()));
-                    dialog.dispose();
+                    new Thread(() -> {
+                        loginUser.setId(usernameTextField.getText());
+                        loginUser.setPw(new String(passwordPasswordField.getPassword()));
+                        try {
+                            validateCredentials();
+                        } catch (Exception ex) {
+                            JOptionPane.showMessageDialog(null, "Exception occurred: " + ex, "Error", JOptionPane.ERROR_MESSAGE);
+                        }
+                    }).start();
                 }
             });
 
